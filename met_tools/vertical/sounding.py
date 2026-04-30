@@ -1,4 +1,4 @@
-def download_sounding_bufr(output_path, start, end, sta=None):
+def sond_download_bufr(output_path, start, end, sta=None):
     """
     Download radiosonde BUFR data from  SIMC-Arkimet (http://arkimet.metarpa:8090).
 
@@ -55,7 +55,7 @@ def download_sounding_bufr(output_path, start, end, sta=None):
 
 # --------------------------------------------------------------------------------------
 
-def read_sounding_bufr(file_path):
+def sond_bufr_to_df(file_path):
     """
     Read radiosonde BUFR data into a pandas DataFrame.
 
@@ -86,56 +86,3 @@ def read_sounding_bufr(file_path):
 
     return df
 
-# -------------------------------------------------------------------------------------
-
-def compute_thermodynamics(df):
-    """
-    Compute thermodynamic variables from radiosonde profiles.
-
-    This function calculates potential temperature, specific humidity,
-    virtual potential temperature, and geometric height using the hypsometric equation.
-
-    Parameters
-    ----------
-    df : pandas.DataFrame
-        Radiosonde dataset containing pressure, temperature, and dewpoint temperature.
-
-    Returns
-    -------
-    pandas.DataFrame
-        Updated DataFrame with additional thermodynamic variables:
-        theta, q, theta_v, t_v, ground_pressure, height.
-    """
-
-    import numpy as np
-
-    # Potential temperature
-    df["theta"] = df["airTemperature"] * (100000 / df["pressure"]) ** 0.286
-
-    # Saturation vapor pressure (hPa)
-    df["e_s"] = 6.112 * np.exp(
-        (17.67 * df["dewpointTemperature"]) /
-        (df["dewpointTemperature"] + 243.5)
-    )
-
-    # Specific humidity
-    df["q"] = 0.622 * df["e_s"] / (df["pressure"] - df["e_s"] * 100)
-
-    # Virtual potential temperature
-    df["theta_v"] = df["theta"] * (1 + 0.61 * df["q"])
-
-    # Virtual temperature
-    df["t_v"] = df["airTemperature"] * (1 + 0.61 * df["q"])
-
-    # Surface pressure per sounding
-    df["ground_pressure"] = df.groupby(
-        ["WMO_station_id", "data_datetime"]
-    )["pressure"].transform("max")
-
-    # Hypsometric equation for height
-    df["height"] = (
-        (287.04 * df["t_v"] / 9.81) *
-        np.log(df["ground_pressure"] / df["pressure"])
-    )
-
-    return df
