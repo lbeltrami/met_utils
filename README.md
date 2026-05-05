@@ -1,6 +1,6 @@
 # met_tools
 
-`met_tools` is my personal set of Python tools to extract, process, and visualize data from GRIB, BUFR and NetCDF files.
+`met_tools` is my personal set of Python tools to play around with GRIB, BUFR and NetCDF files.
 
 
 Still a work-in-progress project.
