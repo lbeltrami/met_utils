@@ -79,6 +79,8 @@ def sond_burf_to_xr(path):
         - station geolocation (latitude, longitude)
         - station elevation (heightOfStationGroundAboveMeanSeaLevel)
 
+    This function is absed on ECMWF's example: https://confluence.ecmwf.int/display/ECC/bufr_read_temp
+
     Parameters
     ----------
     path : str
