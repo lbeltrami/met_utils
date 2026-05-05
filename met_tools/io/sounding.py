@@ -55,7 +55,7 @@ def sond_download_bufr(output_path, start, end, sta=None):
 
 # --------------------------------------------------------------------------------------
 
-def read_bufr_sounding(path):
+def sond_burf_to_xr(path):
     """
     Read a BUFR radiosounding file and extract its data and metadata.
     Converts each BUFR message into one vertical profile with the following structure:
