@@ -1,6 +1,7 @@
-def sond_download_bufr(output_path, start, end, sta=None):
+def sond_download_bufr(output_path, start, end, blo=16, sta=None):
     """
-    Download radiosonde BUFR data from  SIMC-Arkimet (http://arkimet.metarpa:8090).
+    Download radiosonde BUFR data from  SIMC-Arkimet (http://arkimet.metarpa:8090)
+    using arki-query Bash function (https://arpa-simc.github.io/arkimet/)
 
     This function queries the Arkimet database and downloads BUFR-format
     radiosonde observations for Italian stations over a specified time period.
@@ -15,9 +16,10 @@ def sond_download_bufr(output_path, start, end, sta=None):
         Start date in YYYY-MM-DD format.
     end : str
         End date in YYYY-MM-DD format.
+    blo : int or str, optional
+        WMO block number (default = 16, which is Italy)
     sta : int or str or None, optional
-        Last three digits of the WMO station ID (e.g. 144 for 16144).
-        If None, all stations are downloaded.
+        WMO station number. If None, all country's stations are taken.
     Returns
     -------
     None
@@ -25,24 +27,21 @@ def sond_download_bufr(output_path, start, end, sta=None):
 
     import subprocess
 
-    # Validate station filter
+    # validate station filter
     if sta is not None:
         if isinstance(sta, (int, str)):
             sta = str(sta)
-
             if not sta.isdigit():
                 raise ValueError("sta must contain only digits (e.g. 144)")
-
         else:
             raise TypeError("sta must be int, str, or None")
 
-    # Italian stations have WMO IDs as 16nnn
-    query = f"reftime:>={start},<={end}; proddef:GRIB:blo=16"
-
+    # compose the arki-query
+    query = f"reftime:>={start},<={end}; proddef:GRIB:blo={blo}"
     if sta is not None:
         query += f",sta={sta}"
 
-    # Run arkimet query to download the BUFR data
+    # Run arki-query to download the BUFR data from Arkimet
     cmd = [
         "arki-query",
         "--data",
@@ -64,22 +63,24 @@ def sond_bufr_to_xr(path):
         - profile : index identifying each radiosounding (one per BUFR message)
 
     - coords:
-        - pressure (Pa) : used as the vertical coordinate for all profile variables
+        - level : index of the profile's vertical level
 
-    - data_vars (all defined along pressure):
+    - data_vars:
+        - pressure (Pa)
+        - nonCoordinateHeight (m)
         - airTemperature (K)
         - dewpointTemperature (K)
-        - nonCoordinateGeopotentialHeight (m)
         - windDirection (deg)
         - windSpeed (m/s)
 
-    - attrs (constant per each profile):
-        - time (year, month, day, hour, minute)
-        - station identifiers (blockNumber, stationNumber)
+    - attrs:
+        - date and time (year, month, day, hour, minute)
+        - station identifiers (WMO_station_id, blockNumber, stationNumber)
         - station geolocation (latitude, longitude)
         - station elevation (heightOfStationGroundAboveMeanSeaLevel)
 
     This function is based on ECMWF's example: https://confluence.ecmwf.int/display/ECC/bufr_read_temp
+    but is structured to implemet an xarray-like workflow.
 
     Parameters
     ----------
@@ -89,11 +90,12 @@ def sond_bufr_to_xr(path):
     Returns
     -------
     xr.Dataset
-        A concatenated dataset of all radiosounding profiles in the file.
+        An xarray Dataset containing all radiosounding profiles in the file.
     """
 
     from eccodes import (codes_bufr_new_from_file, codes_set, codes_get,
         codes_get_array, codes_release)
+    from datetime import datetime
     import numpy as np
     import xarray as xr
 
@@ -120,8 +122,13 @@ def sond_bufr_to_xr(path):
         hour   = codes_get(msg, "hour")
         minute = codes_get(msg, "minute")
 
+        date_time = datetime(year=int(year), month=int(month), day=int(day), # costum var for dt
+                                hour=int(hour), minute=int(minute))
+
         blockNumber   = codes_get(msg, "blockNumber")
         stationNumber = codes_get(msg, "stationNumber")
+
+        WMO_station_id = f"{blockNumber:02d}{stationNumber:03d}" # costum var for WMO code
 
         latitude  = codes_get(msg, "latitude")
         longitude = codes_get(msg, "longitude")
@@ -133,7 +140,7 @@ def sond_bufr_to_xr(path):
         # get vertical profile values by reading every single level
         pressure = []
         vars_ = {
-            "nonCoordinateGeopotentialHeight": [],
+            "nonCoordinateHeight": [],
             "airTemperature": [],
             "dewpointTemperature": [],
             "windDirection": [],
@@ -157,31 +164,34 @@ def sond_bufr_to_xr(path):
             i += 1
 
         pressure = np.array(pressure)
-        nonCoordinateGeopotentialHeight = np.array(vars_["nonCoordinateGeopotentialHeight"])
+        nonCoordinateHeight = np.array(vars_["nonCoordinateHeight"])
         airTemperature = np.array(vars_["airTemperature"])
         dewpointTemperature = np.array(vars_["dewpointTemperature"])
         windDirection = np.array(vars_["windDirection"])
         windSpeed = np.array(vars_["windSpeed"])
 
-        # build dataset
+        # build the dataset
         ds = xr.Dataset(
             data_vars={
-                "airTemperature": ("pressure", airTemperature),
-                "dewpointTemperature": ("pressure", dewpointTemperature),
-                "nonCoordinateGeopotentialHeight": ("pressure", nonCoordinateGeopotentialHeight),
-                "windDirection": ("pressure", windDirection),
-                "windSpeed": ("pressure", windSpeed),
+                "pressure": ("level", pressure),
+                "nonCoordinateHeight": ("level", nonCoordinateHeight),
+                "airTemperature": ("level", airTemperature),
+                "dewpointTemperature": ("level", dewpointTemperature),
+                "windDirection": ("level", windDirection),
+                "windSpeed": ("level", windSpeed),
             },
             coords={
-                "pressure": ("pressure", pressure),
+                "level": np.arange(len(pressure)),
             },
             attrs={
+                "datetime": date_time,
                 "year": year,
                 "month": month,
                 "day": day,
                 "hour": hour,
                 "minute": minute,
 
+                "WMO_station_id": WMO_station_id,
                 "blockNumber": blockNumber,
                 "stationNumber": stationNumber,
 
@@ -192,11 +202,8 @@ def sond_bufr_to_xr(path):
         )
 
         datasets.append(ds)
-
-        # release message handle
         codes_release(msg)
-
-    # close file
+        
     bufr.close()
 
     return xr.concat(datasets, dim="profile")
