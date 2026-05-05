@@ -55,7 +55,7 @@ def sond_download_bufr(output_path, start, end, sta=None):
 
 # --------------------------------------------------------------------------------------
 
-def sond_burf_to_xr(path):
+def sond_bufr_to_xr(path):
     """
     Read a BUFR radiosounding file and extract its data and metadata.
     Converts each BUFR message into one vertical profile with the following structure:
@@ -93,7 +93,7 @@ def sond_burf_to_xr(path):
     """
 
     from eccodes import (codes_bufr_new_from_file, codes_set, codes_get,
-        codes_get_array, codes_release,)
+        codes_get_array, codes_release)
     import numpy as np
     import xarray as xr
 
