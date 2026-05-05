@@ -79,7 +79,7 @@ def sond_bufr_to_xr(path):
         - station geolocation (latitude, longitude)
         - station elevation (heightOfStationGroundAboveMeanSeaLevel)
 
-    This function is absed on ECMWF's example: https://confluence.ecmwf.int/display/ECC/bufr_read_temp
+    This function is based on ECMWF's example: https://confluence.ecmwf.int/display/ECC/bufr_read_temp
 
     Parameters
     ----------
@@ -130,15 +130,38 @@ def sond_bufr_to_xr(path):
             msg, "heightOfStationGroundAboveMeanSeaLevel"
         )
 
-        # get vertical profile values
-        pressure = np.array(codes_get_array(msg, "pressure"))
-        nonCoordinateGeopotentialHeight = np.array(
-            codes_get_array(msg, "nonCoordinateGeopotentialHeight")
-        )
-        airTemperature = np.array(codes_get_array(msg, "airTemperature"))
-        dewpointTemperature = np.array(codes_get_array(msg, "dewpointTemperature"))
-        windDirection = np.array(codes_get_array(msg, "windDirection"))
-        windSpeed = np.array(codes_get_array(msg, "windSpeed"))
+        # get vertical profile values by reading every single level
+        pressure = []
+        vars_ = {
+            "nonCoordinateGeopotentialHeight": [],
+            "airTemperature": [],
+            "dewpointTemperature": [],
+            "windDirection": [],
+            "windSpeed": [],
+        }
+        
+        i = 1
+
+        while True:
+            try:
+                pressure.append(codes_get(msg, f"#{i}#pressure"))
+            except:
+                break  # no more levels
+
+            for varname in vars_:
+                try:
+                    vars_[varname].append(codes_get(msg, f"#{i}#{varname}"))
+                except:
+                    vars_[varname].append(np.nan)
+
+            i += 1
+
+        pressure = np.array(pressure)
+        nonCoordinateGeopotentialHeight = np.array(vars_["nonCoordinateGeopotentialHeight"])
+        airTemperature = np.array(vars_["airTemperature"])
+        dewpointTemperature = np.array(vars_["dewpointTemperature"])
+        windDirection = np.array(vars_["windDirection"])
+        windSpeed = np.array(vars_["windSpeed"])
 
         # build dataset
         ds = xr.Dataset(
