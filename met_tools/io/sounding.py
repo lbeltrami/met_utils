@@ -92,7 +92,8 @@ def sond_burf_to_xr(path):
         A concatenated dataset of all radiosounding profiles in the file.
     """
 
-    from eccodes import *
+    from eccodes import (codes_bufr_new_from_file, codes_set, codes_get,
+        codes_get_array, codes_release,)
     import numpy as np
     import xarray as xr
 
