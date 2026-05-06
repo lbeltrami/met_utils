@@ -59,19 +59,16 @@ def sond_bufr_to_xr(path):
     Read a BUFR radiosounding file and extract its data and metadata.
     Converts each BUFR message into one vertical profile with the following structure:
 
-    - dim:
-        - profile : index identifying each radiosounding (one per BUFR message)
-
-    - coords:
-        - level : index of the profile's vertical level
-
     - data_vars:
         - pressure (Pa)
-        - nonCoordinateHeight (m)
+        - nonCoordinateGeopotentialHeight (m^2 / s^2)     !!! units to be verified !!!
         - airTemperature (K)
         - dewpointTemperature (K)
         - windDirection (deg)
         - windSpeed (m/s)
+    
+    - coords:
+        - level : index of the profile's vertical level
 
     - attrs:
         - date and time (year, month, day, hour, minute)
@@ -80,7 +77,7 @@ def sond_bufr_to_xr(path):
         - station elevation (heightOfStationGroundAboveMeanSeaLevel)
 
     This function is based on ECMWF's example: https://confluence.ecmwf.int/display/ECC/bufr_read_temp
-    but is structured to implemet an xarray-like workflow.
+    and is designed for compliancy with xarray workflows.
 
     Parameters
     ----------
@@ -89,8 +86,8 @@ def sond_bufr_to_xr(path):
 
     Returns
     -------
-    xr.Dataset
-        An xarray Dataset containing all radiosounding profiles in the file.
+    list of xr.Dataset
+        A list where each element is an xarray Dataset representing a single radiosounding profile.
     """
 
     from eccodes import (codes_bufr_new_from_file, codes_set, codes_get,
@@ -99,13 +96,13 @@ def sond_bufr_to_xr(path):
     import numpy as np
     import xarray as xr
 
-    datasets = []
+    profiles = []
 
     # open BUFR file
     bufr = open(path, 'rb')
 
     # loop for all the messages in the file
-    while 1:
+    while True:
 
         # get handle for message
         msg = codes_bufr_new_from_file(bufr)
@@ -116,14 +113,13 @@ def sond_bufr_to_xr(path):
         codes_set(msg, 'unpack', 1)
 
         # get sounding site metadata
-        year   = codes_get(msg, "year")
-        month  = codes_get(msg, "month")
-        day    = codes_get(msg, "day")
-        hour   = codes_get(msg, "hour")
-        minute = codes_get(msg, "minute")
+        year = int(codes_get(msg, "year"))
+        month = int(codes_get(msg, "month"))
+        day = int(codes_get(msg, "day"))
+        hour = int(codes_get(msg, "hour"))
+        minute = int(codes_get(msg, "minute"))
 
-        date_time = datetime(year=int(year), month=int(month), day=int(day), # costum var for dt
-                                hour=int(hour), minute=int(minute))
+        date_time = datetime(year, month, day, hour, minute) # costum var for dt
 
         blockNumber   = codes_get(msg, "blockNumber")
         stationNumber = codes_get(msg, "stationNumber")
@@ -140,7 +136,7 @@ def sond_bufr_to_xr(path):
         # get vertical profile values by reading every single level
         pressure = []
         vars_ = {
-            "nonCoordinateHeight": [],
+            "nonCoordinateGeopotentialHeight": [],
             "airTemperature": [],
             "dewpointTemperature": [],
             "windDirection": [],
@@ -164,7 +160,7 @@ def sond_bufr_to_xr(path):
             i += 1
 
         pressure = np.array(pressure)
-        nonCoordinateHeight = np.array(vars_["nonCoordinateHeight"])
+        nonCoordinateGeopotentialHeight = np.array(vars_["nonCoordinateGeopotentialHeight"])
         airTemperature = np.array(vars_["airTemperature"])
         dewpointTemperature = np.array(vars_["dewpointTemperature"])
         windDirection = np.array(vars_["windDirection"])
@@ -174,7 +170,7 @@ def sond_bufr_to_xr(path):
         ds = xr.Dataset(
             data_vars={
                 "pressure": ("level", pressure),
-                "nonCoordinateHeight": ("level", nonCoordinateHeight),
+                "nonCoordinateGeopotentialHeight": ("level", nonCoordinateGeopotentialHeight),
                 "airTemperature": ("level", airTemperature),
                 "dewpointTemperature": ("level", dewpointTemperature),
                 "windDirection": ("level", windDirection),
@@ -201,9 +197,9 @@ def sond_bufr_to_xr(path):
             }
         )
 
-        datasets.append(ds)
+        profiles.append(ds)
         codes_release(msg)
         
     bufr.close()
 
-    return xr.concat(datasets, dim="profile")
+    return profiles
