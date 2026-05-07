@@ -1,3 +1,32 @@
+def mixing_ratio_from_dewpoint(p, Td):
+    """
+    Compute water vapor mixing ratio from pressure and dew point temperature.
+
+    Parameters
+    ----------
+    p : array-like
+        Pressure (Pa)
+    Td : array-like
+        Dew point temperature (K)
+
+    Returns
+    -------
+    array-like
+        Mixing ratio (kg/kg)
+    """
+
+    import numpy as np
+
+    # calculate water pressure using Magnus-Tetens formula (hPa)
+    e = 6.1094 * np.exp((17.625 * (Td - 273.15)) / ((Td - 273.15) + 243.04))
+
+    # convert from hPa to Pa
+    e = e * 100.0
+
+    return 0.622 * e / (p - e)
+
+# ----------------------------------------------------------------------------
+
 def virtual_potential_temperature(p, T, Td):
     """
     Compute virtual potential temperature from pressure, air temperature and dew point temperature.
@@ -26,32 +55,3 @@ def virtual_potential_temperature(p, T, Td):
     q = mixing_ratio_from_dewpoint(p, Td)
 
     return theta * (1 + 0.61 * q)
-
-# ----------------------------------------------------------------------------
-
-def mixing_ratio_from_dewpoint(p, Td):
-    """
-    Compute water vapor mixing ratio from pressure and dew point temperature.
-
-    Parameters
-    ----------
-    p : array-like
-        Pressure (Pa)
-    Td : array-like
-        Dew point temperature (K)
-
-    Returns
-    -------
-    array-like
-        Mixing ratio (kg/kg)
-    """
-
-    import numpy as np
-
-    # calculate water pressure using Magnus-Tetens formula (hPa)
-    e = 6.1094 * np.exp((17.625 * (Td - 273.15)) / ((Td - 273.15) + 243.04))
-
-    # convert from hPa to Pa
-    e = e * 100.0
-
-    return 0.622 * e / (p - e)
