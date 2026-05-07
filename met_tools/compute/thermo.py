@@ -49,8 +49,12 @@ def virtual_potential_temperature(p, T, Td):
 
     import numpy as np
 
+    Rd = 287.05
+    cp = 1004.0
+    k = Rd / cp
+
     # calculate potential temperature
-    theta = T * (100000.0 / p) ** 0.286
+    theta = T * (100000.0 / p) ** k
 
     # calculate mixing ratio
     q = mixing_ratio_from_dewpoint(p, Td)
