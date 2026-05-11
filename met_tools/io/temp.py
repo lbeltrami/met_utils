@@ -54,7 +54,7 @@ def sond_download_bufr(output_path, start, end, blo=16, sta=None):
 
 # --------------------------------------------------------------------------------------
 
-def sond_bufr_to_xr(path):
+def sond_bufr_to_xr(path, verbose=False):
     """
     Read a BUFR radiosounding file and extract its data and metadata.
     Converts each BUFR message into one vertical profile with the following structure:
@@ -83,6 +83,8 @@ def sond_bufr_to_xr(path):
     ----------
     path : str
         Path to the BUFR file containing radiosounding observations.
+    verbose : bool
+        If True, prints station ID and datetime for each profile (default = False).
 
     Returns
     -------
@@ -100,6 +102,9 @@ def sond_bufr_to_xr(path):
 
     # open BUFR file
     bufr = open(path, 'rb')
+
+    if verbose is True:
+        print("File opened ...")
 
     # loop for all the messages in the file
     while True:
@@ -199,7 +204,64 @@ def sond_bufr_to_xr(path):
 
         profiles.append(ds)
         codes_release(msg)
+
+        if verbose:
+            print("WMO_station_id: ", WMO_station_id, " --- date_time: ", date_time)
         
     bufr.close()
 
     return profiles
+
+def dba_bufr_to_df(path):
+    """
+    Read a BUFR radiosounding file and extract its data and metadata using
+    the dballe library (https://github.com/ARPA-SIMC/dballe).
+    """
+
+    import dballe
+    import pandas as pd
+
+    # connect to in-memory database to import the BUFR file
+    db = dballe.DB.connect("mem:")
+    importer = dballe.Importer("BUFR")
+
+    with open(path, "r") as file:
+        with importer.from_file(file) as f:
+            for msgs in f:
+                with db.transaction() as tr:
+                    for message in msgs:
+                        tr.import_messages(message,overwrite=True, update_station=True,import_attributes=True)
+
+    # query the database to extract all profiles and their metadata into a DataFrame
+    records = []
+
+    with db.transaction() as tr:
+
+        for srow in tr.query_stations():
+            ana_id = srow["ana_id"]
+
+            # station metadata
+            station_meta = {}
+            for mrow in tr.query_station_data({"ana_id": ana_id}):
+                v = mrow["variable"]
+                station_meta[v.code] = v.enqd()
+
+            # observations
+            for row in tr.query_data({"ana_id": ana_id}):
+
+                var = row["variable"]
+                level = row["level"]
+                trange = row["trange"]
+
+                records.append({
+                    "ana_id": ana_id,
+                    "station": srow["station"],
+                    "datetime": row["datetime"],
+                    "level": level.l1 if level else None,
+                    "var_code": var.code,
+                    "var_desc": var.info.desc,
+                    "value": var.enqd(),
+                    **station_meta,
+                })
+
+    return pd.DataFrame(records)
