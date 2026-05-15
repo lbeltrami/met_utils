@@ -52,175 +52,61 @@ def sond_download_bufr(output_path, start, end, blo=16, sta=None):
 
     subprocess.run(cmd, check=True)
 
-# --------------------------------------------------------------------------------------
 
-def sond_bufr_to_xr(path, verbose=False):
+def dba_bufr_to_df(path):
     """
-    Read a BUFR radiosounding file and extract its data and metadata.
-    Converts each BUFR message into one vertical profile with the following structure:
+    Convert BUFR radiosounding data into a structured pandas DataFrame
+    using dballe (https://github.com/ARPA-SIMC/dballe).
 
-    - data_vars:
-        - pressure (Pa)
-        - nonCoordinateGeopotentialHeight (m^2 / s^2)     !!! units to be verified !!!
-        - airTemperature (K)
-        - dewpointTemperature (K)
-        - windDirection (deg)
-        - windSpeed (m/s)
-    
-    - coords:
-        - level : index of the profile's vertical level
+    This function reads a BUFR file containing upper-air soundings,
+    extracts both station metadata and vertical profile observations,
+    and reorganizes them into a flat tabular structure where each row 
+    corresponds to a single vertical level of a sounding profile.
 
-    - attrs:
-        - date and time (year, month, day, hour, minute)
-        - station identifiers (WMO_station_id, blockNumber, stationNumber)
-        - station geolocation (latitude, longitude)
-        - station elevation (heightOfStationGroundAboveMeanSeaLevel)
-
-    This function is based on ECMWF's example: https://confluence.ecmwf.int/display/ECC/bufr_read_temp
-    and is designed for compliancy with xarray workflows.
+    COLUMNS:
+        WMO_block            : WMO block number (-)
+        WMO_station          : WMO station identifier (-)
+        latitude             : station latitude (deg)
+        longitude            : station longitude (deg)
+        station_height_amsl  : station elevation above mean sea level (m)
+        datetime             : launch date-time UTC
+        level                : vertical level identifier, based on pressure
+        pressure             : pressure (Pa)
+        geopotential         : geopotential (m² s⁻²)
+        temperature          : temperature (K)
+        dewpoint_temperature : dew point temperature (K)
+        wind_speed           : wind speed (m s⁻¹)
+        wind_direction       : wind direction (degrees)
 
     Parameters
     ----------
     path : str
-        Path to the BUFR file containing radiosounding observations.
-    verbose : bool
-        If True, prints station ID and datetime for each profile (default = False).
-
+        Path to the BUFR file.
     Returns
     -------
-    list of xr.Dataset
-        A list where each element is an xarray Dataset representing a single radiosounding profile.
-    """
-
-    from eccodes import (codes_bufr_new_from_file, codes_set, codes_get,
-        codes_get_array, codes_release)
-    from datetime import datetime
-    import numpy as np
-    import xarray as xr
-
-    profiles = []
-
-    # open BUFR file
-    bufr = open(path, 'rb')
-
-    if verbose is True:
-        print("File opened ...")
-
-    # loop for all the messages in the file
-    while True:
-
-        # get handle for message
-        msg = codes_bufr_new_from_file(bufr)
-        if msg is None:
-            break
-
-        # instruct ecCodes to unpack data
-        codes_set(msg, 'unpack', 1)
-
-        # get sounding site metadata
-        year = int(codes_get(msg, "year"))
-        month = int(codes_get(msg, "month"))
-        day = int(codes_get(msg, "day"))
-        hour = int(codes_get(msg, "hour"))
-        minute = int(codes_get(msg, "minute"))
-
-        date_time = datetime(year, month, day, hour, minute) # costum var for dt
-
-        blockNumber   = codes_get(msg, "blockNumber")
-        stationNumber = codes_get(msg, "stationNumber")
-
-        WMO_station_id = f"{blockNumber:02d}{stationNumber:03d}" # costum var for WMO code
-
-        latitude  = codes_get(msg, "latitude")
-        longitude = codes_get(msg, "longitude")
-
-        heightOfStationGroundAboveMeanSeaLevel = codes_get(
-            msg, "heightOfStationGroundAboveMeanSeaLevel"
-        )
-
-        # get vertical profile values by reading every single level
-        pressure = []
-        vars_ = {
-            "nonCoordinateGeopotentialHeight": [],
-            "airTemperature": [],
-            "dewpointTemperature": [],
-            "windDirection": [],
-            "windSpeed": [],
-        }
-        
-        i = 1
-
-        while True:
-            try:
-                pressure.append(codes_get(msg, f"#{i}#pressure"))
-            except:
-                break  # no more levels
-
-            for varname in vars_:
-                try:
-                    vars_[varname].append(codes_get(msg, f"#{i}#{varname}"))
-                except:
-                    vars_[varname].append(np.nan)
-
-            i += 1
-
-        pressure = np.array(pressure)
-        nonCoordinateGeopotentialHeight = np.array(vars_["nonCoordinateGeopotentialHeight"])
-        airTemperature = np.array(vars_["airTemperature"])
-        dewpointTemperature = np.array(vars_["dewpointTemperature"])
-        windDirection = np.array(vars_["windDirection"])
-        windSpeed = np.array(vars_["windSpeed"])
-
-        # build the dataset
-        ds = xr.Dataset(
-            data_vars={
-                "pressure": ("level", pressure),
-                "nonCoordinateGeopotentialHeight": ("level", nonCoordinateGeopotentialHeight),
-                "airTemperature": ("level", airTemperature),
-                "dewpointTemperature": ("level", dewpointTemperature),
-                "windDirection": ("level", windDirection),
-                "windSpeed": ("level", windSpeed),
-            },
-            coords={
-                "level": np.arange(len(pressure)),
-            },
-            attrs={
-                "datetime": date_time,
-                "year": year,
-                "month": month,
-                "day": day,
-                "hour": hour,
-                "minute": minute,
-
-                "WMO_station_id": WMO_station_id,
-                "blockNumber": blockNumber,
-                "stationNumber": stationNumber,
-
-                "latitude": latitude,
-                "longitude": longitude,
-                "heightOfStationGroundAboveMeanSeaLevel": heightOfStationGroundAboveMeanSeaLevel,
-            }
-        )
-
-        profiles.append(ds)
-        codes_release(msg)
-
-        if verbose:
-            print("WMO_station_id: ", WMO_station_id, " --- date_time: ", date_time)
-        
-    bufr.close()
-
-    return profiles
-    
-# WORK IN PROGRESS ...
-def dba_bufr_to_df(path):
-    """
-    Read a BUFR radiosounding file and extract its data and metadata using
-    the dballe library (https://github.com/ARPA-SIMC/dballe).
+    pandas.DataFrame
+        A DataFrame containing the converted data.
     """
 
     import dballe
     import pandas as pd
+
+    BUFR_CODES = {
+        # WMO - BUFR Table B codes for station metadata
+        "B01001": "WMO_block",
+        "B01002": "WMO_station",
+        "B05001": "latitude",
+        "B06001": "longitude",
+        "B07030": "station_height_amsl",
+
+        # WMO - BUFR Table B codes for profile variables
+        "B10004": "pressure",
+        "B10008": "geopotential",
+        "B12101": "temperature",
+        "B12103": "dewpoint_temperature",
+        "B11001": "wind_direction",
+        "B11002": "wind_speed",
+    }
 
     # connect to in-memory database to import the BUFR file
     db = dballe.DB.connect("mem:")
@@ -233,36 +119,58 @@ def dba_bufr_to_df(path):
                     for message in msgs:
                         tr.import_messages(message,overwrite=True, update_station=True,import_attributes=True)
 
-    # query the database to extract all profiles and their metadata into a DataFrame
+    # query the in-memory database to get all the data in a DataFrame
     records = []
 
     with db.transaction() as tr:
 
         for srow in tr.query_stations():
+
             ana_id = srow["ana_id"]
 
             # station metadata
             station_meta = {}
-            for mrow in tr.query_station_data({"ana_id": ana_id}):
-                v = mrow["variable"]
-                station_meta[v.code] = v.enqd()
+            for row in tr.query_station_data({"ana_id": ana_id}):
+                var = row["variable"]
+                name = BUFR_CODES.get(var.code, var.code)
+                # skip some useless variables e.g. characteristics of the sond
+                if name is not None:
+                    station_meta[name] = var.enqd()
+ 
+            WMO_block = int(station_meta.get("WMO_block"))
+            WMO_station = int(station_meta.get("WMO_station"))
 
             # observations
             for row in tr.query_data({"ana_id": ana_id}):
 
                 var = row["variable"]
-                level = row["level"]
-                trange = row["trange"]
+                var_name = BUFR_CODES.get(var.code)
+                # skip some useless variables e.g. lat/lon displacement 
+                if var_name is None:
+                    continue
 
+                level_obj = row["level"]
+                level = level_obj.l1 if level_obj else None
+                
                 records.append({
-                    "ana_id": ana_id,
-                    "station": srow["station"],
+                    "WMO_block": WMO_block,
+                    "WMO_station": WMO_station,
+                    "latitude": station_meta.get("latitude"),
+                    "longitude": station_meta.get("longitude"),
+                    "station_height_amsl": station_meta.get("station_height_amsl"),
                     "datetime": row["datetime"],
-                    "level": level.l1 if level else None,
-                    "var_code": var.code,
-                    "var_desc": var.info.desc,
-                    "value": var.enqd(),
-                    **station_meta,
+                    "level": level,
+                    "var_name": var_name,
+                    "value": var.enqd()
                 })
 
-    return pd.DataFrame(records)
+    # build dataframe
+    df = pd.DataFrame(records)
+    df = df.pivot_table(
+        index=["WMO_block", "WMO_station", "datetime", "latitude", "longitude",
+            "station_height_amsl", "level"],
+        columns="var_name",
+        values="value"
+    ).reset_index()
+
+    return df
