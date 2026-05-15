@@ -121,11 +121,9 @@ def dba_bufr_to_df(path):
 
     # query the in-memory database to get all the data in a DataFrame
     records = []
-
     with db.transaction() as tr:
 
         for srow in tr.query_stations():
-
             ana_id = srow["ana_id"]
 
             # station metadata
